@@ -1,228 +1,257 @@
-# Data Science Boilerplate
+# Plateforme intelligente de tri et de priorisation des demandes clients
 
-Welcome to the **Data Science Boilerplate**: A modern, production-ready template for data science projects with best practices.
+## Contexte
+Les entreprises reçoivent chaque jour un volume important de demandes clients via plusieurs canaux : formulaires web, e-mails, tickets support ou messageries internes. Le traitement manuel de ces demandes est souvent lent, hétérogène et source d’erreurs de routage ou de priorisation.
 
-This documentation contains the following sections:
+Ce projet propose une plateforme d’intelligence artificielle capable de centraliser ces demandes, de les préparer, puis de les classer automatiquement afin d’aider les équipes support à gagner du temps et à traiter les cas les plus urgents en priorité.
 
-- [Quick Start](#quick-start)
-- [Project Structure](#project-structure)
-- [Package Customization](#package-customization)
-- [Development Workflow](#development-workflow)
-- [Documentation](#documentation)
+## Objectif métier
+L’objectif est de concevoir une solution applicative qui permet de :
+- collecter des demandes depuis plusieurs sources de données ;
+- nettoyer, normaliser et structurer les informations ;
+- stocker les données dans une base relationnelle conforme aux bonnes pratiques ;
+- classer automatiquement chaque demande par catégorie métier ;
+- estimer son niveau de priorité ;
+- exposer les prédictions via une API REST ;
+- préparer le projet à une logique d’industrialisation et de MLOps.
 
-# Quick Start
+## Fonctionnalités attendues
+- ingestion de données depuis fichiers CSV, base de données ou API ;
+- transformation et nettoyage des données ;
+- stockage dans PostgreSQL ;
+- mise à disposition via une API REST développée avec FastAPI ;
+- modèle de machine learning pour la classification de texte ;
+- évaluation du modèle et suivi des performances ;
+- tests automatisés sur les composants critiques ;
+- conteneurisation avec Docker ;
+- journalisation et bases de monitorage.
 
-## 1. Create a new repository
+## Périmètre fonctionnel
+Le système vise principalement trois usages :
+1. **Qualifier** une demande client à partir de son sujet et de sa description.
+2. **Prioriser** la demande selon des règles métier et/ou un modèle IA.
+3. **Exposer** les résultats à d’autres composants ou à une interface applicative.
 
-### Option A: Use as GitHub Template
-1. Click "Use this template" on GitHub
-2. Choose "Create a new repository"
-3. Name your repository
+## Cas d’usage principal
+Un agent saisit ou importe une demande client. La plateforme analyse le texte, détecte la catégorie probable (par exemple : facturation, incident technique, commande, réclamation), estime une priorité (basse, moyenne, haute) et retourne un résultat exploitable par l’équipe support.
 
-### Option B: Clone and Customize
-```bash
-git clone <this-repo-url>
-cd <your-project-name>
-```
+## Données utilisées
+Les données pourront provenir de :
+- fichiers CSV ou Excel simulés ;
+- jeux de données publics ;
+- export de tickets support ;
+- API ou scraping de contenu de FAQ pour enrichir les catégories.
 
-## 2. Customize Package Name (Optional)
+Les jeux de données seront organisés dans le dépôt pour distinguer :
+- `data/raw/` : données brutes ;
+- `data/processed/` : données nettoyées et préparées ;
+- `data/external/` : sources externes ;
+- `data/samples/` : exemples réduits pour les tests et la démonstration.
 
-You can easily customize the package name to match your project:
+## Architecture technique
+L’architecture du projet est organisée autour de quatre blocs principaux :
 
-```bash
-# Customize during setup
-make setup PACKAGE_NAME=my-awesome-project
+- **Ingestion / Data Engineering** : extraction, nettoyage, transformation et chargement des données ;
+- **Base de données** : stockage des demandes et des métadonnées dans PostgreSQL ;
+- **API applicative** : exposition des données et des prédictions via FastAPI ;
+- **Machine Learning / MLOps** : entraînement, évaluation, export du modèle, tests et monitorage.
 
-# Or customize separately
-make customize-package PACKAGE_NAME=my-awesome-project
-```
+### Technologies envisagées
+- Python 3.11+
+- FastAPI
+- PostgreSQL
+- SQLAlchemy
+- pandas
+- scikit-learn
+- pytest
+- Docker
+- Uvicorn
 
-The package name will automatically be converted to a valid Python module name (hyphens become underscores).
-
-## 3. Setup Development Environment
-
-```bash
-# Install dependencies and setup virtual environment
-make setup
-
-# Install pre-commit hooks
-make install_precommit
-```
-
-That's it! Your development environment is ready.
-
-# Project Structure
-
-This boilerplate provides a recommended repository structure following Python best practices:
-
-```
-├── src/                           # Source code (src layout)
-│   └── your_package_name/         # Your main package
+## Structure du dépôt
+```text
+plateforme-tri-demandes-clients/
+├── README.md
+├── .gitignore
+├── .env.example
+├── pyproject.toml
+├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
+├── Makefile
+├── data/
+│   ├── raw/
+│   ├── processed/
+│   ├── external/
+│   └── samples/
+├── notebooks/
+│   └── 01_exploration_donnees.ipynb
+├── docs/
+│   ├── architecture.md
+│   ├── cahier_des_charges.md
+│   ├── modele_donnees.md
+│   ├── api_spec.md
+│   └── soutenance.md
+├── src/
+│   └── app/
 │       ├── __init__.py
-│       ├── core/                  # Core functionality
+│       ├── main.py
+│       ├── config.py
+│       ├── api/
 │       │   ├── __init__.py
-│       │   ├── data_processing.py
-│       │   └── models.py
-│       └── utils/                 # Utility functions
+│       │   ├── routes/
+│       │   │   ├── health.py
+│       │   │   ├── tickets.py
+│       │   │   └── predictions.py
+│       │   └── schemas/
+│       │       ├── ticket.py
+│       │       └── prediction.py
+│       ├── db/
+│       │   ├── __init__.py
+│       │   ├── session.py
+│       │   ├── models.py
+│       │   └── migrations/
+│       ├── ingestion/
+│       │   ├── __init__.py
+│       │   ├── extract.py
+│       │   ├── transform.py
+│       │   └── load.py
+│       ├── features/
+│       │   ├── __init__.py
+│       │   └── text_preprocessing.py
+│       ├── ml/
+│       │   ├── __init__.py
+│       │   ├── train.py
+│       │   ├── predict.py
+│       │   ├── evaluate.py
+│       │   └── model_registry.py
+│       ├── monitoring/
+│       │   ├── __init__.py
+│       │   ├── drift.py
+│       │   └── metrics.py
+│       └── utils/
 │           ├── __init__.py
-│           └── helpers.py
-├── tests/                         # Test files
-│   ├── unit_tests/
-│   ├── integration_tests/
-│   └── data/
-├── notebooks/                     # Jupyter notebooks
-├── docs/                          # Documentation
-├── config/                        # Configuration files
-├── bin/                           # Executable scripts
-├── data/                          # Data files (gitignored)
-├── secrets/                       # Sensitive files (gitignored)
-├── pyproject.toml                 # Project configuration
-├── requirements.txt               # Runtime dependencies
-├── Makefile                       # Development commands
-└── .pre-commit-config.yaml        # Pre-commit hooks
+│           └── logger.py
+├── tests/
+│   ├── __init__.py
+│   ├── test_api.py
+│   ├── test_ingestion.py
+│   ├── test_transformation.py
+│   ├── test_ml.py
+│   └── test_db.py
+├── scripts/
+│   ├── seed_db.py
+│   ├── run_pipeline.py
+│   ├── train_model.py
+│   └── export_predictions.py
+├── models/
+│   ├── .gitkeep
+│   └── README.md
+└── .github/
+    └── workflows/
+        ├── ci.yml
+        └── cd.yml
 ```
 
-## Key Benefits of This Structure
-
-- **Src Layout**: Prevents import confusion and follows Python best practices
-- **Clear Separation**: Source code, tests, notebooks, and configuration are clearly separated
-- **Scalable**: Easy to add new modules and packages
-- **Standard**: Follows industry conventions
-
-# Package Customization
-
-The boilerplate makes it easy to customize the package name for your project:
-
-## How It Works
-
-- **Package Name**: The name you specify (e.g., "my-awesome-project")
-- **Python Module**: Automatically converted (e.g., "my_awesome_project")
-
-## Customization Commands
-
+## Installation et démarrage
+### 1. Cloner le dépôt
 ```bash
-# Show current configuration
-make customize-package
-
-# Customize package name
-make customize-package PACKAGE_NAME=my-ds-project
-
-# Customize during setup
-make setup PACKAGE_NAME=my-ds-project
+git clone <repo-url>
+cd plateforme-tri-demandes-clients
 ```
 
-## What Gets Updated
-
-- `pyproject.toml`: Package name and module configuration
-- `src/` directory: Renamed to match your module name
-- All imports will work with the new module name
-
-## Examples
-
-| Package Name | Python Module | Import Statement |
-|--------------|---------------|------------------|
-| `my-project` | `my_project` | `from my_project import ...` |
-| `awesome-ds` | `awesome_ds` | `from awesome_ds import ...` |
-| `ml-pipeline` | `ml_pipeline` | `from ml_pipeline import ...` |
-
-# Development Workflow
-
-## Available Commands
-
+### 2. Préparer l’environnement
 ```bash
-# Setup development environment
+cp .env.example .env
+pip install -r requirements.txt
+```
+
+### 3. Lancer l’API en local
+```bash
+uvicorn src.app.main:app --reload
+```
+
+### 4. Lancer avec Docker
+```bash
+docker compose up --build
+```
+
+## Commandes utiles
+```bash
 make setup
-
-# Install pre-commit hooks
 make install_precommit
-
-# Format and lint code
 make format
-
-# Run tests
 make run_tests
-
-# Serve documentation locally
-make serve_docs_locally
-
-# Deploy documentation
-make deploy_docs
 ```
 
-## Code Quality Tools
+## API
+### Endpoints principaux
+- `GET /health` : vérification de l’état du service ;
+- `GET /` : page d’accueil de l’API ;
+- `POST /tickets/predict` : prédiction de catégorie et de priorité à partir d’une demande client.
 
-This boilerplate includes several tools to maintain code quality:
+### Exemple de requête
+```json
+{
+  "subject": "Problème de facture",
+  "description": "Je n'arrive pas à télécharger ma facture du mois dernier."
+}
+```
 
-- **Pre-commit hooks**: Automatically format and lint code on commit
-- **Ruff**: Fast Python linter and formatter
-- **Bandit**: Security vulnerability detection
-- **Pytest**: Testing framework
-- **nbstripout**: Clean Jupyter notebook outputs
+### Exemple de réponse
+```json
+{
+  "category": "facturation",
+  "priority": "moyenne",
+  "confidence": 0.78
+}
+```
 
-## Git Workflow
+## Entraînement du modèle
+Le modèle de base peut être entraîné à partir d’un fichier CSV contenant au minimum :
+- une colonne `text` ;
+- une colonne `category`.
 
-1. **Pre-commit hooks** automatically format and lint your code
-2. **Tests run on push** to ensure code quality
-3. **CI pipeline** validates code on GitHub
-4. **Pull request template** helps with code reviews
+L’entraînement est prévu dans `src/app/ml/train.py`, avec une approche simple de classification de texte basée sur `scikit-learn`.
 
-# Documentation
+## Tests
+Les tests automatisés couvrent les composants clés du projet :
+- API ;
+- ingestion ;
+- transformation des données ;
+- base de données ;
+- modèle de machine learning.
 
-## Local Development
-
+Exécution :
 ```bash
-# Serve documentation locally
-make serve_docs_locally
+pytest
 ```
 
-This will serve the documentation at `http://localhost:8001`
+## Déploiement Docker
+Le projet est prévu pour fonctionner dans des conteneurs Docker afin de faciliter :
+- la reproductibilité de l’environnement ;
+- le déploiement local ;
+- l’intégration continue ;
+- la préparation à un déploiement plus industrialisé.
 
-## Publishing
+## MLOps et monitorage
+Le projet intègre une logique MLOps autour de :
+- la version des données et du modèle ;
+- les tests de validation avant mise en production ;
+- le suivi des performances du modèle ;
+- la détection d’une dérive éventuelle des données ou des prédictions ;
+- la journalisation des événements et erreurs.
 
-The documentation is automatically built and deployed to GitHub Pages on each push to the `main` branch.
+## Livrables de soutenance
+- cahier des charges fonctionnel ;
+- schéma d’architecture technique ;
+- modèle conceptuel / physique des données ;
+- pipeline d’ingestion et de transformation ;
+- API REST documentée ;
+- modèle IA entraîné et évalué ;
+- tests automatisés ;
+- conteneur Docker ;
+- documentation technique ;
+- démonstration fonctionnelle.
 
-To manually deploy:
-```bash
-make deploy_docs
-```
-
-## Configuration
-
-- **MkDocs**: Documentation generator
-- **Material for MkDocs**: Beautiful theme
-- **GitHub Pages**: Automatic deployment
-
-# Adding Dependencies
-
-## Runtime Dependencies
-
-Add to `requirements.txt`:
-```
-pandas>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-```
-
-## Development Dependencies
-
-Add to `pyproject.toml` under `[project.optional-dependencies]`:
-```toml
-dev = [
-    "pre-commit>=3.0.0",
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-]
-```
-
-# Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `make run_tests`
-5. Format code: `make format`
-6. Submit a pull request
-
-# License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+## Auteurs
+Projet réalisé dans le cadre de la certification de développeur en intelligence artificielle – Data Engineering.
