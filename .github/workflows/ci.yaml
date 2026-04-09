@@ -1,0 +1,46 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  CI:
+    name: Launching CI
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11']
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install pyenv
+        run: |
+          curl https://pyenv.run | bash
+          echo "$HOME/.pyenv/bin" >> $GITHUB_PATH
+          echo "$HOME/.pyenv/shims" >> $GITHUB_PATH
+
+      - name: Install Python ${{ matrix.python-version }} with pyenv
+        run: |
+          pyenv install ${{ matrix.python-version }}
+          pyenv global ${{ matrix.python-version }}
+
+      - name: Setup development environment
+        run: |
+          make setup
+
+      - name: Install pre-commit hooks
+        run: |
+          make install_precommit
+
+      - name: Run pre-commit hooks (formatting, linting & tests)
+        run: |
+          pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure
+
+      - name: Run tests
+        run: |
+          make run_tests

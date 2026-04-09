@@ -1,0 +1,39 @@
+[project]
+name = "my-ds-project"
+version = "0.1.0"
+description = "A boilerplate template for data science projects with pre-commit hooks and best practices"
+authors = [
+    {name = "Your Name", email = "you@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=3.0.0",
+    "codespell>=2.2.0",
+    "ruff>=0.1.0",
+    "bandit>=1.7.0",
+    "nbstripout>=0.6.0",
+    "pytest>=7.0.0",
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings>=0.24.0",
+    "mkdocstrings-python>=1.7.0",
+    "termynal>=0.13.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["my_ds_project"]
+
+[tool.setuptools.package-data]
+"*" = ["*.md", "*.txt", "*.yaml", "*.yml"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}

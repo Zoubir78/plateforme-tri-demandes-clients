@@ -1,0 +1,9 @@
+exclude_dirs:
+  - tests
+  - venv
+  - .venv
+skips:
+  - B101
+  - B601
+targets:
+  - src
