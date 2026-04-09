@@ -161,7 +161,12 @@ cd plateforme-tri-demandes-clients
 
 ### 2. Préparer l’environnement
 ```bash
-cp .env.example .env
+
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+# Only if you don't have .env yet
+cp -n .env.example .env
 pip install -r requirements.txt
 ```
 
