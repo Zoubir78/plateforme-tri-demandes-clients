@@ -36,17 +36,70 @@ Le système vise principalement trois usages :
 Un agent saisit ou importe une demande client. La plateforme analyse le texte, détecte la catégorie probable (par exemple : facturation, incident technique, commande, réclamation), estime une priorité (basse, moyenne, haute) et retourne un résultat exploitable par l’équipe support.
 
 ## Données utilisées
-Les données pourront provenir de :
-- fichiers CSV ou Excel simulés ;
-- jeux de données publics ;
-- export de tickets support ;
-- API ou scraping de contenu de FAQ pour enrichir les catégories.
 
-Les jeux de données seront organisés dans le dépôt pour distinguer :
-- `data/raw/` : données brutes ;
-- `data/processed/` : données nettoyées et préparées ;
-- `data/external/` : sources externes ;
-- `data/samples/` : exemples réduits pour les tests et la démonstration.
+Le projet s’appuie désormais sur un fichier local unique et volumineux : **`complaints.csv`**.
+
+### Principe d’intégration
+- le fichier brut reste hors versionnement Git dans `data/raw/complaints.csv` ;
+- une copie réduite d’exemple peut être placée dans `data/samples/` ;
+- les données sont d’abord chargées dans une **table de staging PostgreSQL** ;
+- les données sont ensuite normalisées vers les tables métier (`raw_complaints`, `clean_complaints`, `predictions`, `model_runs`).
+
+### Pourquoi une table de staging
+Avec plus de 7 Go de données, il est préférable de ne pas charger le fichier entier en mémoire Python. Le dépôt doit donc montrer une logique d’ingestion robuste :
+1. chargement direct du CSV dans PostgreSQL ;
+2. contrôle qualité sur la structure ;
+3. transformation en base normalisée ;
+4. alimentation du modèle IA à partir d’un jeu préparé.
+
+### Colonnes recommandées pour le socle
+Sans figer tout le schéma du fichier source, le socle peut exploiter en priorité :
+- `complaint_id`
+- `product`
+- `sub_product`
+- `issue`
+- `sub_issue`
+- `consumer_complaint_narrative`
+- `company`
+- `state`
+- `zip_code`
+- `date_received`
+- `company_public_response`
+- `submitted_via`
+- `timely_response`
+- `consumer_disputed`
+- `tags`
+
+### Architecture de chargement recommandée
+- `complaints_raw_staging` : réception directe du CSV brut ;
+- `raw_complaints` : version exploitable et historisée ;
+- `clean_complaints` : texte nettoyé pour le NLP ;
+- `predictions` : résultats de classification / priorisation ;
+- `model_runs` : suivi des entraînements et des métriques.
+
+### Pipeline d’ingestion conseillé
+- lecture du CSV par blocs (`chunks`) ;
+- validation des colonnes attendues ;
+- suppression des lignes vides ou corrompues ;
+- normalisation des champs texte ;
+- insertion par lots en base PostgreSQL.
+
+### Fichier d’import à prévoir
+Créer un script dédié :
+- `scripts/import_complaints_to_postgres.py`
+
+Ce script doit :
+- lire `data/raw/complaints.csv` ;
+- charger les données dans `complaints_raw_staging` ;
+- transformer les colonnes utiles ;
+- insérer les données nettoyées dans les tables métier.
+
+### Environnement local PostgreSQL
+Le plus simple pour un poste local est :
+- lancer PostgreSQL avec Docker ou en service local ;
+- créer la base `tickets_db` ;
+- créer la table de staging ;
+- exécuter l’import depuis votre machine.
 
 ## Architecture technique
 L’architecture du projet est organisée autour de quatre blocs principaux :
@@ -161,12 +214,7 @@ cd plateforme-tri-demandes-clients
 
 ### 2. Préparer l’environnement
 ```bash
-
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-# Only if you don't have .env yet
-cp -n .env.example .env
+cp .env.example .env
 pip install -r requirements.txt
 ```
 
@@ -260,3 +308,4 @@ Le projet intègre une logique MLOps autour de :
 
 ## Auteurs
 Projet réalisé dans le cadre de la certification de développeur en intelligence artificielle – Data Engineering.
+
