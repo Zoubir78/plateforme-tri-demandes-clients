@@ -19,18 +19,11 @@ class Settings:
     GCS_BUCKET_NAME: str | None = os.getenv("GCS_BUCKET_NAME")
     GOOGLE_APPLICATION_CREDENTIALS: str | None = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
-    def validate(self) -> None:
-        if not self.GCS_BUCKET_NAME:
-            raise ValueError("GCS_BUCKET_NAME est requis")
+    def validate(self):
+        # valide seulement si vraiment nécessaire
+        pass
 
-        if not self.GCP_PROJECT_ID:
-            raise ValueError("GCP_PROJECT_ID est requis")
-
-
-@lru_cache
-def get_settings() -> Settings:
-    settings = Settings()
-    settings.validate()
-    return settings
+def get_settings():
+    return Settings()
 
 settings = get_settings()

@@ -1,24 +1,23 @@
-FROM python:3.11-slim
+# Dockerfile (racine)
+FROM python:3.10-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-RUN apt-get update && apt-get install -y \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONUNBUFFERED=1
+ENV STREAMLIT_SERVER_HEADLESS=true
+ENV STREAMLIT_SERVER_ENABLECORS=false
+ENV API_URL=http://api:8000
 
 WORKDIR /app
 
-# upgrade pip
-RUN pip install --upgrade pip
+RUN apt-get update && apt-get install -y \
+    build-essential curl gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY . /app
 
-#RUN pip install -r requirements.txt
+RUN pip install --upgrade pip && pip install .
 
-COPY . .
+EXPOSE 8501
 
-CMD ["uvicorn", "src.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["streamlit", "run", "src/app/streamlit_dashboard.py", \
+     "--server.address=0.0.0.0", \
+     "--server.port=8501"]
