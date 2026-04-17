@@ -1,60 +1,34 @@
-[project]
+[tool.poetry]
 name = "plateforme-tri-demandes-clients"
 version = "0.1.0"
-description = "Plateforme intelligente de tri et de priorisation des demandes clients"
-requires-python = ">=3.10,<3.12"
+description = "Plateforme intelligente de tri des demandes clients"
+authors = ["You <you@example.com>"]
+readme = "README.md"
+packages = [{ include = "src" }]
 
-dependencies = [
-    "streamlit==1.28.0",
-    "fastapi==0.115.0",
-    "uvicorn[standard]==0.34.0",
-    "pandas>=2.2,<3",
-    "numpy>=1.24,<2",
-    "scikit-learn==1.5.2",
-    "joblib==1.5.2",
-    "matplotlib==3.8.0",
-    "seaborn==0.12.2",
-    "wordcloud>=1.9,<2",
-    "google-cloud-storage==2.9.0",
-    "requests==2.31.0",
-    "python-dotenv==1.0.1",
-    "pydantic==2.6.4"
-]
+[tool.poetry.dependencies]
+python = ">=3.10,<3.12"
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-mock>=3.15.1",
-    "ruff>=0.4.0"
-]
+streamlit = "1.28.0"
+pandas = ">=2.2,<3"
+numpy = ">=1.24,<2"
+scikit-learn = "1.5.2"
+joblib = "1.5.2"
+matplotlib = "3.8.0"
+seaborn = "0.12.2"
+wordcloud = ">=1.9,<2"
+google-cloud-storage = "2.9.0"
+requests = "2.31.0"
+python-dotenv = "1.0.1"
+pydantic = "2.6.4"
+fastapi = "0.115.0"
+uvicorn = {extras = ["standard"], version = "0.34.0"}
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.0"
+pytest-mock = ">=3.15.1"
+ruff = ">=0.4.0"
 
-[tool.pytest.ini_options]
-pythonpath = ["src"]
-norecursedirs = [".git", ".venv", "dist", "build"]
-
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-
-exclude = [
-    ".git",
-    "__pycache__",
-    ".venv",
-    "build",
-    "dist",
-]
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
-ignore = ["E501"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["src"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-line-ending = "auto"
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
