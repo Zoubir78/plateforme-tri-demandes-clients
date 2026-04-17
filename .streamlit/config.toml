@@ -1,4 +1,4 @@
-[server]
-headless = false
-port = 8501
-enableCORS = true
+#[server]
+#headless = false
+#port = 8501
+#enableCORS = true
