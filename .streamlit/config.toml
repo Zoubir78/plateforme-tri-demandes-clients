@@ -1,8 +1,7 @@
 
-# URL de l'API FastAPI 
-api_url = "http://localhost:8000"
+
 
 [server]
-headless = true
+headless = false
 port = 8501
-enableCORS = false
+enableCORS = true
