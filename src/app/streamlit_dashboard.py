@@ -86,8 +86,12 @@ def download_model(blob_name: str, local_path="tmp_model.joblib"):
 # -----------------------------
 # API
 # -----------------------------
+
 def predict_api(text: str):
-    r = requests.post(f"{API_URL}/predictions", json={"text": text})
+    payload = {
+    "text": text,   # adapte aux champs attendus par ton API
+    }
+    r = requests.post(f"{API_URL}/predictions", json=payload, timeout=30)
     r.raise_for_status()
     return r.json()
 
