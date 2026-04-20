@@ -34,9 +34,8 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "clean_complaints")
 DEFAULT_MODEL_PATH = os.getenv("MODEL_PATH", "models/model.joblib")
 DEFAULT_MODEL_VERSION = os.getenv("MODEL_VERSION", "logreg-v1")
 
-st.set_page_config(page_title="Tableau de bord Signal Conso", page_icon="📊", layout="wide")
-st.title("Tableau de bord Signal Conso")
-st.caption("Signalements, catégories, mots-clés, performance modèle et pipeline GCS.")
+st.set_page_config(page_title="Signal Conso DASHBOARD", page_icon="📊", layout="wide")
+#st.caption("Signalements, catégories, mots-clés, performance modèle et pipeline GCS.")
 
 
 # -----------------------------
@@ -309,6 +308,22 @@ def _keyword_frequency(df: pd.DataFrame, limit: int = 15) -> pd.Series:
     ordered = sorted(counter.items(), key=lambda item: item[1], reverse=True)[:limit]
     return pd.Series({display_name[key]: count for key, count in ordered})
 
+# -----------------------------
+# 🎨 STYLE GLOBAL
+# -----------------------------
+PRIMARY_COLOR = "#1f77b4"
+
+st.markdown("""
+<style>
+.main-title {font-size:32px;font-weight:700;color:#1f77b4;}
+.section-title {font-size:22px;font-weight:600;margin-top:20px;}
+.card {padding:15px;border-radius:10px;background:#f9f9f9;box-shadow:0px 2px 6px rgba(0,0,0,0.05);}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="main-title">📊 Dashboard Signal Conso</div>', unsafe_allow_html=True)
+st.caption("Analyse data + IA + monitoring avancé")
+
 
 # -----------------------------
 # GCS HELPERS
@@ -371,12 +386,20 @@ def predict_api(text: str) -> dict[str, Any]:
 # SIDEBAR
 # -----------------------------
 with st.sidebar:
-    st.header("⚙️ Configuration")
-    st.write(f"**API** : `{API_URL}`")
-    st.write(f"**Bucket** : `{GCS_BUCKET_NAME}`")
-    st.write(f"**Modèle par défaut** : `{DEFAULT_MODEL_VERSION}`")
+    st.markdown("## ⚙️ Configuration")
 
-    if st.button("🔄 Rafraîchir les données"):
+    st.markdown("### 🌐 API")
+    st.code(API_URL)
+
+    st.markdown("### ☁️ Bucket")
+    st.code(GCS_BUCKET_NAME)
+
+    st.markdown("### 🤖 Modèle")
+    st.code(DEFAULT_MODEL_VERSION)
+
+    st.markdown("---")
+
+    if st.button("🔄 Refresh global"):
         st.cache_data.clear()
         st.rerun()
 
@@ -401,7 +424,7 @@ if not df.empty:
 tab_signalconso, tab_predict, tab_data, tab_ml, tab_compare, tab_monitoring, tab_gcs, tab_pipeline = st.tabs(
     [
         "📋 Signal Conso",
-        "🤖 Prédire",
+        "🤖 Prédictions",
         "📊 Data",
         "🧠 ML",
         "⚖️ Comparaison",
@@ -428,42 +451,71 @@ with tab_signalconso:
         )
         reference_date = available_dates.max() if not available_dates.empty else date.today()
 
-        c1, c2, c3 = st.columns([1.2, 1.2, 1.6])
+        c1, c2, c3, c4 = st.columns([1.1, 1.1, 1.4, 1.4])
+
         with c1:
             selected_date = st.date_input(
                 "Sélection d'une autre date",
                 value=reference_date,
                 format="DD/MM/YYYY",
             )
+
         with c2:
             period_choice = st.selectbox(
                 "Période",
                 ["Depuis le début du mois", "7 derniers jours", "Toutes les données"],
                 index=0,
             )
+
+        # --------- REGION ---------
         with c3:
-            dept_options = ["Tous les départements"]
-            if "department_label" in df.columns:
-                dept_options.extend(
+            region_options = ["Toutes les régions"]
+            if "reg_name" in df.columns:
+                region_options.extend(
                     sorted(
-                        [
-                            d
-                            for d in df["department_label"].dropna().astype(str).unique()
-                            if d and d != "Inconnu"
-                        ]
+                        df["reg_name"]
+                        .dropna()
+                        .astype(str)
+                        .unique()
                     )
                 )
 
-            preferred = "91 - Essonne"
-            dept_index = dept_options.index(preferred) if preferred in dept_options else 0
+            selected_region = st.selectbox(
+                "Région",
+                region_options,
+            )
+
+        # --------- DATA FILTRÉE PAR REGION (IMPORTANT) ---------
+        df_region_filtered = df.copy()
+
+        if selected_region != "Toutes les régions" and "reg_name" in df.columns:
+            df_region_filtered = df_region_filtered[
+                df_region_filtered["reg_name"].astype(str) == selected_region
+            ]
+
+        # --------- DEPARTEMENT (DÉPENDANT) ---------
+        with c4:
+            dept_options = ["Tous les départements"]
+
+            if "department_label" in df_region_filtered.columns:
+                dept_options.extend(
+                    sorted(
+                        df_region_filtered["department_label"]
+                        .dropna()
+                        .astype(str)
+                        .unique()
+                    )
+                )
+
             selected_department = st.selectbox(
-                "Département sélectionné",
+                "Département",
                 dept_options,
-                index=dept_index,
             )
 
         # Filtrage temporel
         filtered_df = df.copy()
+
+        # ---- Temps
         if "creationdate" in filtered_df.columns:
             filtered_df = filtered_df[filtered_df["creationdate"].notna()].copy()
 
@@ -474,6 +526,7 @@ with tab_signalconso:
                     (filtered_df["creationdate"].dt.date >= start_date)
                     & (filtered_df["creationdate"].dt.date <= end_date)
                 ]
+
             elif period_choice == "7 derniers jours":
                 start_date = selected_date - timedelta(days=6)
                 end_date = selected_date
@@ -482,9 +535,17 @@ with tab_signalconso:
                     & (filtered_df["creationdate"].dt.date <= end_date)
                 ]
 
-        # Filtrage département
+        # ---- Région
+        if selected_region != "Toutes les régions" and "reg_name" in filtered_df.columns:
+            filtered_df = filtered_df[
+                filtered_df["reg_name"].astype(str) == selected_region
+            ]
+
+        # ---- Département (après région)
         if selected_department != "Tous les départements" and "department_label" in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df["department_label"] == selected_department].copy()
+            filtered_df = filtered_df[
+                filtered_df["department_label"] == selected_department
+            ]
 
         selected_label_date = selected_date.strftime("%d/%m/%Y")
         st.markdown(f"### Tableau de bord Signal Conso au {selected_label_date}")
@@ -612,57 +673,66 @@ with tab_signalconso:
 
 
 # -----------------------------
-# TAB 2 - PREDICT
+# TAB 2 - PRÉDICTION
 # -----------------------------
 with tab_predict:
-    st.subheader("Prédiction temps réel")
-    text = st.text_area("Texte client")
+    st.markdown('<div class="section-title">🤖 Prédiction intelligente</div>', unsafe_allow_html=True)
 
-    if st.button("Prédire"):
+    col1, col2 = st.columns([3,1])
+
+    with col1:
+        text = st.text_area("✍️ Saisir un texte client", height=160)
+
+    with col2:
+        st.markdown("### ⚡ Action")
+        run = st.button("🚀 Prédire")
+
+    if run:
         if not text.strip():
-            st.warning("Le texte est vide.")
+            st.warning("Texte vide")
         else:
-            try:
+            with st.spinner("Analyse IA..."):
                 result = predict_api(text)
-                st.success(result.get("predicted_category", "Prédiction effectuée"))
-                st.json(result)
-            except Exception as e:
-                st.error(str(e))
+
+            st.success(f"📌 {result.get('predicted_category')}")
+            st.metric("Confiance", f"{result.get('confidence',0):.2%}")
+            st.json(result)
 
 
 # -----------------------------
 # TAB 3 - DATA
 # -----------------------------
 with tab_data:
-    st.subheader("Analyse exploratoire des données")
+    st.markdown('<div class="section-title">📊 Data Explorer</div>', unsafe_allow_html=True)
 
-    if source is not None and not df.empty:
-        st.success(f"Dataset chargé depuis GCS : {source}")
-        st.metric("Nombre de lignes", len(df))
+    if not df.empty:
+        c1,c2,c3 = st.columns(3)
+        c1.metric("📄 Lignes", len(df))
+        c2.metric("📊 Colonnes", len(df.columns))
+        c3.metric("🏷️ Catégories", df['category'].nunique() if 'category' in df else 0)
 
-        if "category" in df.columns:
-            st.write("### Top catégories globales")
-            st.bar_chart(_frequency_from_cells(df, "category", limit=10))
+        st.markdown("---")
 
-        if "token_count" in df.columns:
-            st.write("### Distribution du nombre de tokens")
-            token_series = pd.to_numeric(df["token_count"], errors="coerce").dropna().astype(int)
-            if not token_series.empty:
-                st.line_chart(token_series.value_counts().sort_index())
+        colA, colB = st.columns(2)
 
-        if "creationdate" in df.columns:
-            st.write("### Volume dans le temps")
-            valid_dates = df["creationdate"].dropna()
-            if not valid_dates.empty:
-                timeline = valid_dates.dt.date.value_counts().sort_index()
+        with colA:
+            if "category" in df.columns:
+                st.markdown("### Top catégories")
+                st.bar_chart(df["category"].value_counts().head(10))
+
+        with colB:
+            if "creationdate" in df.columns:
+                st.markdown("### Volume temporel")
+                timeline = df["creationdate"].dropna().dt.date.value_counts().sort_index()
                 st.line_chart(timeline)
 
         if "clean_text" in df.columns:
-            st.write("### Wordcloud global")
+            st.markdown("### ☁️ Nuage de mots")
             text_all = " ".join(df["clean_text"].dropna().astype(str))
-            if text_all.strip():
-                wc = WordCloud(width=800, height=400, background_color="white").generate(text_all)
-                fig, ax = plt.subplots(figsize=(12, 5))
+            if text_all:
+                from wordcloud import WordCloud
+                wc = WordCloud(width=800,height=400).generate(text_all)
+                fig, ax = plt.subplots()
                 ax.imshow(wc)
                 ax.axis("off")
                 st.pyplot(fig)
@@ -676,38 +746,29 @@ with tab_data:
 # TAB 4 - ML
 # -----------------------------
 with tab_ml:
-    st.subheader("Analyse modèle")
+    st.markdown('<div class="section-title">🧠 Analyse modèle</div>', unsafe_allow_html=True)
 
-    if not df.empty and "clean_text" in df.columns and "category" in df.columns:
-        model = TicketModel(DEFAULT_MODEL_PATH)
-        try:
-            model.load()
-        except Exception as exc:
-            st.error(f"Impossible de charger le modèle local : {exc}")
-        else:
-            if st.button("📊 Évaluer le modèle"):
-                with st.spinner("Évaluation en cours..."):
-                    eval_df = df.dropna(subset=["clean_text", "category"]).copy()
-                    eval_df["pred"] = eval_df["clean_text"].astype(str).apply(lambda x: model.predict(x))
+    if not df.empty and "category" in df.columns:
+        if st.button("📊 Évaluer"):
+            with st.spinner("Calcul métriques..."):
+                eval_df = df.dropna(subset=["clean_text","category"])
+                model = TicketModel(DEFAULT_MODEL_PATH)
+                model.load()
 
-                    acc = accuracy_score(eval_df["category"], eval_df["pred"])
-                    f1 = f1_score(eval_df["category"], eval_df["pred"], average="weighted")
+                eval_df["pred"] = eval_df["clean_text"].apply(model.predict)
 
-                    c1, c2 = st.columns(2)
-                    c1.metric("Accuracy", f"{acc:.3f}")
-                    c2.metric("F1", f"{f1:.3f}")
+                acc = accuracy_score(eval_df["category"], eval_df["pred"])
+                f1 = f1_score(eval_df["category"], eval_df["pred"], average="weighted")
 
-                    st.write("### Matrice de confusion")
-                    cm = confusion_matrix(eval_df["category"], eval_df["pred"])
-                    fig, ax = plt.subplots(figsize=(8, 6))
-                    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-                    ax.set_xlabel("Prédit")
-                    ax.set_ylabel("Réel")
-                    st.pyplot(fig)
+                c1,c2 = st.columns(2)
+                c1.metric("Accuracy", f"{acc:.3f}")
+                c2.metric("F1", f"{f1:.3f}")
 
-                    st.write("### Exemples d'erreurs")
-                    errors = eval_df[eval_df["category"] != eval_df["pred"]]
-                    st.dataframe(errors[["clean_text", "category", "pred"]].head(20), use_container_width=True)
+                st.markdown("### Confusion Matrix")
+                cm = confusion_matrix(eval_df["category"], eval_df["pred"])
+                fig, ax = plt.subplots()
+                sns.heatmap(cm, annot=True, fmt="d", ax=ax)
+                st.pyplot(fig)
     else:
         st.info("Le dataset n'est pas disponible ou ne contient pas les colonnes attendues.")
 
@@ -716,35 +777,39 @@ with tab_ml:
 # TAB 5 - COMPARAISON
 # -----------------------------
 with tab_compare:
-    st.subheader("Comparaison de plusieurs modèles")
+    st.markdown('<div class="section-title">⚖️ Benchmark modèles</div>', unsafe_allow_html=True)
 
-    model_names = list_blob_names("models/")
-    selected_models = st.multiselect("Choisir les modèles à comparer", model_names)
+    models = list_blob_names("models/")
+    selected = st.multiselect("Choisir modèles", models)
 
-    if not df.empty and "clean_text" in df.columns and "category" in df.columns and selected_models:
-        comparison_results: list[dict[str, Any]] = []
+    if selected and not df.empty:
+        results = []
 
-        for model_blob in selected_models:
+        for m in selected:
             try:
-                local_model_path = download_model(model_blob, local_path=f"tmp_{Path(model_blob).name}")
-                candidate_model = TicketModel(local_model_path)
-                candidate_model.load()
+                path = download_model(m)
+                model = TicketModel(path)
+                model.load()
 
-                eval_df = df.dropna(subset=["clean_text", "category"]).copy()
-                eval_df["pred"] = eval_df["clean_text"].astype(str).apply(lambda x: candidate_model.predict(x))
+                eval_df = df.dropna(subset=["clean_text","category"])
+                eval_df["pred"] = eval_df["clean_text"].apply(model.predict)
+
                 acc = accuracy_score(eval_df["category"], eval_df["pred"])
                 f1 = f1_score(eval_df["category"], eval_df["pred"], average="weighted")
 
-                comparison_results.append({"model": model_blob, "accuracy": acc, "f1": f1})
-            except Exception as exc:
-                comparison_results.append({"model": model_blob, "accuracy": None, "f1": None, "error": str(exc)})
+                results.append({"model": m, "accuracy": acc, "f1": f1})
+            except Exception as e:
+                results.append({"model": m, "error": str(e)})
 
-        result_df = pd.DataFrame(comparison_results)
-        st.dataframe(result_df, use_container_width=True)
+        res = pd.DataFrame(results)
+        st.dataframe(res)
 
-        chart_df = result_df.dropna(subset=["accuracy"]).set_index("model")
-        if not chart_df.empty:
-            st.bar_chart(chart_df[["accuracy", "f1"]])
+        if "accuracy" in res.columns:
+            st.bar_chart(res.set_index("model")[["accuracy","f1"]])
+
+        if not res.empty and "f1" in res.columns:
+            best = res.sort_values("f1", ascending=False).iloc[0]
+            st.success(f"🏆 Best model: {best['model']}")
     else:
         st.info("Sélectionnez un ou plusieurs modèles pour lancer la comparaison.")
 
@@ -805,4 +870,7 @@ with tab_pipeline:
             st.error(str(e))
 
 
-st.caption("Dashboard MLOps - Streamlit + FastAPI + GCS")
+# -----------------------------
+# FOOTER
+# -----------------------------
+st.caption("Dashboard PRO — Data + ML + Monitoring 🚀")
