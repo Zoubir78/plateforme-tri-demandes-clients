@@ -6,8 +6,9 @@
 # Evite les conflits avec fastapi/uvicorn/streamlit qui tournent ailleurs.
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Orchestration
-prefect==2.14.21
+# Orchestration — doit correspondre à la version du worker/serveur Prefect
+# Le worker tourne sur Prefect 3.x (task_engine.py présent, begin_task_map absent de engine.py)
+prefect>=3.0,<4
 
 # Données (utilisé dans les tasks de transformation)
 pandas>=2.0,<3
