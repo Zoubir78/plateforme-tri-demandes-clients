@@ -26,6 +26,10 @@ pull:
       id: git_clone
       repository: https://github.com/Zoubir78/plateforme-tri-demandes-clients.git
       branch: main
+  - prefect.deployments.steps.set_working_directory:
+      directory: "{{ git_clone.directory }}"
+  - prefect.deployments.steps.pip_install_requirements:
+      requirements_file: requirements.txt
 
 deployments:
   - name: signal-conso-pipeline
@@ -51,7 +55,7 @@ deployments:
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
-      cron: "*/5 * * * *"
+      cron: "0 */4 * * *"
       timezone: Europe/Paris
       active: true
 
@@ -85,7 +89,7 @@ deployments:
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
-      cron: "*/5 * * * *"
+      cron: "0 */4 * * *"
       timezone: Europe/Paris
       active: true
 
@@ -115,7 +119,7 @@ deployments:
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
-      cron: "*/5 * * * *"
+      cron: "0 */4 * * *"
       timezone: Europe/Paris
       active: true
 
@@ -145,7 +149,7 @@ deployments:
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
-      cron: "*/5 * * * *"
+      cron: "0 */4 * * *"
       timezone: Europe/Paris
       active: true
 
