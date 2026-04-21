@@ -1,20 +1,23 @@
 """
-signal_conso_flows.py
-=====================
-Orchestration Prefect 3.x des KPIs Signal Conso depuis Google Cloud Storage.
+Orchestration Prefect des KPIs Signal Conso depuis Google Cloud Storage.
 
-Compatibilite : Prefect >= 3.0
-Changements vs Prefect 2.x :
-  - Sous-flows supprimes  -> les KPIs sont des tasks simples (evite la serialisation
-    des DataFrames entre flows)
-  - persist_result=False  -> sur les tasks renvoyant storage.Client ou pd.DataFrame
-    (objets non-serialisables par Prefect)
-  - datetime.utcnow()     -> datetime.now(timezone.utc)  (deprecie Python 3.12)
-  - import States supprime (non utilise)
+Flows orchestrés :
+  1. nombre_signalements       — Comptage total des signalements
+  2. signalements_transmis     — Part des signalements transmis aux entreprises
+  3. signalements_transmis_lus — Part des signalements transmis qui ont été lus
+  4. signalements_lus_reponse   — Part des signalements lus ayant reçu une réponse
+
+Usage :
+  # Lancement ponctuel
+  python signal_conso_flows.py
+
+  # Déploiement avec schedule
+  prefect deploy --all
 """
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
@@ -35,9 +38,9 @@ BOOL_TRUE_VALUES: frozenset[str] = frozenset(
 )
 
 
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def _is_missing(value: Any) -> bool:
     if value is None:
@@ -68,12 +71,9 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 # TASKS GCS
-# persist_result=False sur les tasks renvoyant des objets non-serialisables
-# (storage.Client, pd.DataFrame) -- Prefect 3.x tente de serialiser les resultats
-# par defaut via pickle/JSON, ce qui echoue sur ces types.
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @task(
     name="get-gcs-client",
@@ -158,80 +158,9 @@ def preprocess_task(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 # TASKS FILTRAGE
-# ==============================================================================
-
-@task(
-    name="apply-temporal-filter",
-    description="Filtre le DataFrame sur une periode temporelle.",
-    tags=["filter"],
-    persist_result=False,
-)
-def apply_temporal_filter_task(
-    df: pd.DataFrame,
-    reference_date: date | None = None,
-    period: str = "Depuis le debut du mois",
-) -> pd.DataFrame:
-    logger = get_run_logger()
-
-    if "creationdate" not in df.columns:
-        logger.warning("Colonne 'creationdate' absente -- pas de filtre temporel.")
-        return df
-
-    ref = reference_date or date.today()
-    df = df[df["creationdate"].notna()].copy()
-
-    if period in ("Depuis le début du mois", "Depuis le debut du mois"):
-        start = ref.replace(day=1)
-        end = ref
-    elif period == "7 derniers jours":
-        start = ref - timedelta(days=6)
-        end = ref
-    else:
-        logger.info("Periode = 'Toutes les donnees' -- pas de filtre temporel.")
-        return df
-
-    filtered = df[
-        (df["creationdate"].dt.date >= start)
-        & (df["creationdate"].dt.date <= end)
-    ]
-    logger.info(f"Filtre temporel [{start} -> {end}] : {len(df)} -> {len(filtered)} lignes.")
-    return filtered
-
-
-@task(
-    name="apply-geo-filter",
-    description="Filtre le DataFrame par region et/ou departement.",
-    tags=["filter"],
-    persist_result=False,
-)
-def apply_geo_filter_task(
-    df: pd.DataFrame,
-    region: str | None = None,
-    department_label: str | None = None,
-) -> pd.DataFrame:
-    logger = get_run_logger()
-
-    if region and "reg_name" in df.columns:
-        before = len(df)
-        df = df[df["reg_name"].astype(str) == region]
-        logger.info(f"Filtre region '{region}' : {before} -> {len(df)} lignes.")
-
-    if department_label and "department_label" in df.columns:
-        before = len(df)
-        df = df[df["department_label"] == department_label]
-        logger.info(f"Filtre departement '{department_label}' : {before} -> {len(df)} lignes.")
-
-    return df
-
-
-# ==============================================================================
-# TASKS KPI
-# Toutes les tasks KPI s'executent dans le flow principal.
-# Les sous-flows ont ete supprimes : passer un pd.DataFrame entre flows Prefect 3.x
-# necessite une serialisation qui echoue ou degrade les performances.
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @task(name="kpi-nombre-signalements", tags=["kpi"])
 def kpi_nombre_signalements_task(df: pd.DataFrame) -> dict[str, Any]:
