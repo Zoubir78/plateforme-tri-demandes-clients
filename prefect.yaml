@@ -17,48 +17,17 @@
 # ══════════════════════════════════════════════════════════════════════════════
 
 name: signal-conso
-prefect-version: "2.14.0"
 
-# ──────────────────────────────────────────────────────────────────────────────
-# BUILD — pas de build Docker par défaut (image custom en option ci-dessous)
-# ──────────────────────────────────────────────────────────────────────────────
 build: null
-
-# ──────────────────────────────────────────────────────────────────────────────
-# PUSH — stockage du code dans GCS (Storage Block à créer une fois)
-# Pour utiliser un stockage GCS, remplacer "null" par :
-#
-#   - prefect_gcp.cloud_storage.GCSBucket:
-#       bucket: "{{ $GCS_BUCKET_NAME }}"
-#       folder: "prefect-flows"
-# ──────────────────────────────────────────────────────────────────────────────
 push: null
 
-# ──────────────────────────────────────────────────────────────────────────────
-# PULL — comment récupérer le code sur le worker
-# ──────────────────────────────────────────────────────────────────────────────
 pull:
-  - prefect.deployments.steps.set_working_directory:
-      directory: /app  # adapter au répertoire d'exécution
+  - prefect.deployments.steps.git_clone:
+      id: git_clone
+      repository: https://github.com/Zoubir78/plateforme-tri-demandes-clients.git
+      branch: main
 
-# ──────────────────────────────────────────────────────────────────────────────
-# VARIABLES GLOBALES (réutilisées dans les deployments via {{ variables.* }})
-# ──────────────────────────────────────────────────────────────────────────────
-variables:
-  gcs_bucket_name: "clean_complaints"
-  gcs_processed_prefix: "processed/"
-  work_pool: "signal-conso-pool"
-  default_period: "Depuis le début du mois"
-  flow_entrypoint: "signal_conso_flows.py"
-
-# ──────────────────────────────────────────────────────────────────────────────
-# DEPLOYMENTS
-# ──────────────────────────────────────────────────────────────────────────────
 deployments:
-
-  # ════════════════════════════════════════════════════════════════════════════
-  # 1. PIPELINE COMPLET — tous les KPIs, toutes les 5 minutes
-  # ════════════════════════════════════════════════════════════════════════════
   - name: signal-conso-pipeline
     version: "1.0.0"
     tags:
@@ -68,40 +37,33 @@ deployments:
       - gcs
     description: >
       Pipeline complet Signal Conso : extraction GCS → filtrage → calcul des
-      4 KPIs (signalements, transmis, lus, réponse) → publication d'artifacts.
-      Exécuté toutes les 5 minutes en temps réel.
+      KPIs → publication d'artifacts.
 
-    entrypoint: "signal_conso_flows.py:kpi_pipeline_flow"
+    entrypoint: src/app/flows/signal_conso_flows.py:kpi_pipeline_flow
 
     work_pool:
-      name: "{{ variables.work_pool }}"
+      name: signal-conso-pool
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "{{ variables.gcs_bucket_name }}"
-          GCS_PROCESSED_PREFIX: "{{ variables.gcs_processed_prefix }}"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
-    # Schedule : toutes les 5 minutes, 24h/24
-    schedules:
-      - cron: "*/5 * * * *"
-        timezone: "Europe/Paris"
-        active: true
+    schedule:
+      cron: "*/5 * * * *"
+      timezone: Europe/Paris
+      active: true
 
-    # Paramètres par défaut (surchargeables depuis l'UI ou la CLI)
     parameters:
-      bucket_name: "{{ variables.gcs_bucket_name }}"
-      prefix: "{{ variables.gcs_processed_prefix }}"
-      period: "{{ variables.default_period }}"
+      bucket_name: "{{ $GCS_BUCKET_NAME }}"
+      prefix: "{{ $GCS_PROCESSED_PREFIX }}"
+      period: "Depuis le début du mois"
       region: null
       department_label: null
 
-    # Concurrence : 1 run max pour éviter les doublons
     concurrency_limit: 1
 
-  # ════════════════════════════════════════════════════════════════════════════
-  # 2. KPI — Nombre de signalements (toutes les 5 min)
-  # ════════════════════════════════════════════════════════════════════════════
   - name: kpi-nombre-signalements
     version: "1.0.0"
     tags:
@@ -109,98 +71,59 @@ deployments:
       - kpi
       - nombre-signalements
     description: >
-      Calcule en temps réel le nombre total de signalements Signal Conso
-      depuis le dernier fichier disponible dans GCS (processed/).
+      Calcule en temps réel le nombre total de signalements Signal Conso.
 
-    entrypoint: "signal_conso_flows.py:flow_nombre_signalements"
+    entrypoint: src/app/flows/signal_conso_flows.py:flow_nombre_signalements
 
     work_pool:
-      name: "{{ variables.work_pool }}"
+      name: signal-conso-pool
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "{{ variables.gcs_bucket_name }}"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
-    schedules:
-      - cron: "*/5 * * * *"
-        timezone: "Europe/Paris"
-        active: true
+    schedule:
+      cron: "*/5 * * * *"
+      timezone: Europe/Paris
+      active: true
 
-    parameters:
-      # df est injecté dynamiquement par le pipeline principal
-      # Ce deployment est aussi utilisable en standalone via l'UI Prefect
-      {}
+    parameters: {}
 
     concurrency_limit: 1
 
-  # ════════════════════════════════════════════════════════════════════════════
-  # 3. KPI — Signalements transmis (toutes les 5 min)
-  # ════════════════════════════════════════════════════════════════════════════
-  - name: kpi-signalements-transmis
+  - name: kpi-transmis-global
     version: "1.0.0"
     tags:
       - signal-conso
       - kpi
       - transmis
-    description: >
-      Calcule en temps réel la part des signalements transmis aux entreprises
-      (numérateur : signalement_transmis=True / dénominateur : total).
-
-    entrypoint: "signal_conso_flows.py:flow_signalements_transmis"
-
-    work_pool:
-      name: "{{ variables.work_pool }}"
-      work_queue_name: default
-      job_variables:
-        env:
-          GCS_BUCKET_NAME: "{{ variables.gcs_bucket_name }}"
-          GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
-
-    schedules:
-      - cron: "*/5 * * * *"
-        timezone: "Europe/Paris"
-        active: true
-
-    parameters: {}
-
-    concurrency_limit: 1
-
-  # ════════════════════════════════════════════════════════════════════════════
-  # 4. KPI — Signalements transmis lus (toutes les 5 min)
-  # ════════════════════════════════════════════════════════════════════════════
-  - name: kpi-signalements-transmis-lus
-    version: "1.0.0"
-    tags:
-      - signal-conso
-      - kpi
       - transmis-lus
     description: >
-      Calcule en temps réel la part des signalements transmis qui ont été lus
-      (numérateur : transmis ET lus / dénominateur : transmis).
+      Calcule les KPIs signalements transmis et signalements transmis lus.
 
-    entrypoint: "signal_conso_flows.py:flow_signalements_transmis_lus"
+    entrypoint: src/app/flows/signal_conso_flows.py:flow_transmis_global
 
     work_pool:
-      name: "{{ variables.work_pool }}"
+      name: signal-conso-pool
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "{{ variables.gcs_bucket_name }}"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
-    schedules:
-      - cron: "*/5 * * * *"
-        timezone: "Europe/Paris"
-        active: true
+    schedule:
+      cron: "*/5 * * * *"
+      timezone: Europe/Paris
+      active: true
 
-    parameters: {}
+    parameters:
+      kpi_type: both
 
     concurrency_limit: 1
 
-  # ════════════════════════════════════════════════════════════════════════════
-  # 5. KPI — Signalements lus ayant une réponse (toutes les 5 min)
-  # ════════════════════════════════════════════════════════════════════════════
   - name: kpi-signalements-lus-reponse
     version: "1.0.0"
     tags:
@@ -208,31 +131,28 @@ deployments:
       - kpi
       - reponse
     description: >
-      Calcule en temps réel la part des signalements lus ayant reçu une réponse
-      (numérateur : lus ET réponse / dénominateur : lus).
+      Calcule en temps réel la part des signalements lus ayant reçu une réponse.
 
-    entrypoint: "signal_conso_flows.py:flow_signalements_lus_reponse"
+    entrypoint: src/app/flows/signal_conso_flows.py:flow_signalements_lus_reponse
 
     work_pool:
-      name: "{{ variables.work_pool }}"
+      name: signal-conso-pool
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "{{ variables.gcs_bucket_name }}"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
-    schedules:
-      - cron: "*/5 * * * *"
-        timezone: "Europe/Paris"
-        active: true
+    schedule:
+      cron: "*/5 * * * *"
+      timezone: Europe/Paris
+      active: true
 
     parameters: {}
 
     concurrency_limit: 1
 
-  # ════════════════════════════════════════════════════════════════════════════
-  # 6. PIPELINE QUOTIDIEN — rapport complet à 08h00 (Paris)
-  # ════════════════════════════════════════════════════════════════════════════
   - name: signal-conso-daily-report
     version: "1.0.0"
     tags:
@@ -241,27 +161,26 @@ deployments:
       - daily
     description: >
       Rapport KPI quotidien Signal Conso déclenché à 08h00 (Europe/Paris).
-      Couvre toutes les données du mois en cours, toutes régions confondues.
 
-    entrypoint: "signal_conso_flows.py:kpi_pipeline_flow"
+    entrypoint: src/app/flows/signal_conso_flows.py:kpi_pipeline_flow
 
     work_pool:
-      name: "{{ variables.work_pool }}"
+      name: signal-conso-pool
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "{{ variables.gcs_bucket_name }}"
-          GCS_PROCESSED_PREFIX: "{{ variables.gcs_processed_prefix }}"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
           GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
-    schedules:
-      - cron: "0 8 * * *"
-        timezone: "Europe/Paris"
-        active: true
+    schedule:
+      cron: "0 8 * * *"
+      timezone: Europe/Paris
+      active: true
 
     parameters:
-      bucket_name: "{{ variables.gcs_bucket_name }}"
-      prefix: "{{ variables.gcs_processed_prefix }}"
+      bucket_name: "{{ $GCS_BUCKET_NAME }}"
+      prefix: "{{ $GCS_PROCESSED_PREFIX }}"
       period: "Depuis le début du mois"
       region: null
       department_label: null

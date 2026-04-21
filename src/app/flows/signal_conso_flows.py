@@ -5,22 +5,19 @@ Flows orchestrés :
   1. nombre_signalements       — Comptage total des signalements
   2. signalements_transmis     — Part des signalements transmis aux entreprises
   3. signalements_transmis_lus — Part des signalements transmis qui ont été lus
-  4. signalements_lus_reponse  — Part des signalements lus ayant reçu une réponse
+  4. signalements_lus_reponse   — Part des signalements lus ayant reçu une réponse
 
 Usage :
   # Lancement ponctuel
   python signal_conso_flows.py
 
-  # Déploiement avec schedule (toutes les 5 minutes)
-  prefect deployment build signal_conso_flows.py:kpi_pipeline_flow \
-      --name signal-conso-realtime --interval 300
-  prefect deployment apply kpi_pipeline_flow-deployment.yaml
-  prefect agent start --pool default-agent-pool
+  # Déploiement avec schedule
+  prefect deploy --all
 """
 
 from __future__ import annotations
 
-import ast
+import json
 import os
 from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
@@ -28,11 +25,8 @@ from typing import Any
 
 import pandas as pd
 from google.cloud import storage
-
-# ── Prefect ──────────────────────────────────────────────────────────────────
 from prefect import flow, get_run_logger, task
 from prefect.artifacts import create_table_artifact
-from prefect.states import Completed, Failed
 
 # ── Config ────────────────────────────────────────────────────────────────────
 GCS_BUCKET_NAME: str = os.getenv("GCS_BUCKET_NAME", "clean_complaints")
@@ -45,6 +39,10 @@ BOOL_TRUE_VALUES: frozenset[str] = frozenset(
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
 
 def _is_missing(value: Any) -> bool:
     if value is None:
@@ -180,7 +178,7 @@ def apply_temporal_filter_task(
     elif period == "7 derniers jours":
         start = ref - timedelta(days=6)
         end = ref
-    else:  # Toutes les données
+    else:
         logger.info("Période = 'Toutes les données' — pas de filtre temporel.")
         return df
 
@@ -214,14 +212,14 @@ def apply_geo_filter_task(
 
     if department_label and "department_label" in df.columns:
         before = len(df)
-        df = df[df["department_label"] == department_label]
+        df = df[df["department_label"].astype(str) == department_label]
         logger.info(f"Filtre département '{department_label}' : {before} → {len(df)} lignes.")
 
     return df
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TASKS KPI (1 task = 1 KPI)
+# TASKS KPI
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @task(
@@ -238,7 +236,7 @@ def kpi_nombre_signalements_task(df: pd.DataFrame) -> dict[str, Any]:
         "label": "Nombre de signalements",
         "value": total,
         "unit": "signalements",
-        "computed_at": datetime.utcnow().isoformat(),
+        "computed_at": _utc_now_iso(),
     }
 
 
@@ -260,15 +258,13 @@ def kpi_signalements_transmis_task(df: pd.DataFrame) -> dict[str, Any]:
             "numerator": None,
             "denominator": total,
             "error": "Colonne manquante",
-            "computed_at": datetime.utcnow().isoformat(),
+            "computed_at": _utc_now_iso(),
         }
 
     transmitted = int(df["signalement_transmis"].sum())
     rate = transmitted / total if total else 0.0
 
-    logger.info(
-        f"[KPI] Signalements transmis = {transmitted}/{total} = {rate:.2%}"
-    )
+    logger.info(f"[KPI] Signalements transmis = {transmitted}/{total} = {rate:.2%}")
     return {
         "kpi": "signalements_transmis",
         "label": "Part de signalements transmis",
@@ -276,7 +272,7 @@ def kpi_signalements_transmis_task(df: pd.DataFrame) -> dict[str, Any]:
         "value_pct": f"{rate:.2%}",
         "numerator": transmitted,
         "denominator": total,
-        "computed_at": datetime.utcnow().isoformat(),
+        "computed_at": _utc_now_iso(),
     }
 
 
@@ -296,7 +292,7 @@ def kpi_signalements_transmis_lus_task(df: pd.DataFrame) -> dict[str, Any]:
             "label": "Part des signalements transmis lus",
             "value": None,
             "error": f"Colonnes manquantes : {missing_cols}",
-            "computed_at": datetime.utcnow().isoformat(),
+            "computed_at": _utc_now_iso(),
         }
 
     transmitted = int(df["signalement_transmis"].sum())
@@ -304,9 +300,7 @@ def kpi_signalements_transmis_lus_task(df: pd.DataFrame) -> dict[str, Any]:
     read = int(transmitted_df["signalement_lu"].sum())
     rate = read / transmitted if transmitted else 0.0
 
-    logger.info(
-        f"[KPI] Signalements transmis lus = {read}/{transmitted} = {rate:.2%}"
-    )
+    logger.info(f"[KPI] Signalements transmis lus = {read}/{transmitted} = {rate:.2%}")
     return {
         "kpi": "signalements_transmis_lus",
         "label": "Part des signalements transmis lus",
@@ -314,7 +308,7 @@ def kpi_signalements_transmis_lus_task(df: pd.DataFrame) -> dict[str, Any]:
         "value_pct": f"{rate:.2%}",
         "numerator": read,
         "denominator": transmitted,
-        "computed_at": datetime.utcnow().isoformat(),
+        "computed_at": _utc_now_iso(),
     }
 
 
@@ -326,9 +320,7 @@ def kpi_signalements_transmis_lus_task(df: pd.DataFrame) -> dict[str, Any]:
 def kpi_signalements_lus_reponse_task(df: pd.DataFrame) -> dict[str, Any]:
     logger = get_run_logger()
 
-    missing_cols = [
-        c for c in ["signalement_lu", "signalement_reponse"] if c not in df.columns
-    ]
+    missing_cols = [c for c in ["signalement_lu", "signalement_reponse"] if c not in df.columns]
     if missing_cols:
         logger.warning(f"Colonnes manquantes : {missing_cols}")
         return {
@@ -336,7 +328,7 @@ def kpi_signalements_lus_reponse_task(df: pd.DataFrame) -> dict[str, Any]:
             "label": "Part des signalements lus ayant une réponse",
             "value": None,
             "error": f"Colonnes manquantes : {missing_cols}",
-            "computed_at": datetime.utcnow().isoformat(),
+            "computed_at": _utc_now_iso(),
         }
 
     read = int(df["signalement_lu"].sum())
@@ -344,9 +336,7 @@ def kpi_signalements_lus_reponse_task(df: pd.DataFrame) -> dict[str, Any]:
     response = int(read_df["signalement_reponse"].sum())
     rate = response / read if read else 0.0
 
-    logger.info(
-        f"[KPI] Signalements lus avec réponse = {response}/{read} = {rate:.2%}"
-    )
+    logger.info(f"[KPI] Signalements lus avec réponse = {response}/{read} = {rate:.2%}")
     return {
         "kpi": "signalements_lus_reponse",
         "label": "Part des signalements lus ayant une réponse",
@@ -354,12 +344,12 @@ def kpi_signalements_lus_reponse_task(df: pd.DataFrame) -> dict[str, Any]:
         "value_pct": f"{rate:.2%}",
         "numerator": response,
         "denominator": read,
-        "computed_at": datetime.utcnow().isoformat(),
+        "computed_at": _utc_now_iso(),
     }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# TASK PUBLICATION
+# PUBLICATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @task(
@@ -372,11 +362,10 @@ def publish_kpi_results_task(kpis: list[dict[str, Any]], source_blob: str) -> di
 
     summary = {
         "source": source_blob,
-        "computed_at": datetime.utcnow().isoformat(),
+        "computed_at": _utc_now_iso(),
         "kpis": kpis,
     }
 
-    # Artifact tabulaire visible dans l'UI Prefect
     table_rows = []
     for k in kpis:
         row: dict[str, Any] = {
@@ -402,12 +391,12 @@ def publish_kpi_results_task(kpis: list[dict[str, Any]], source_blob: str) -> di
         description=f"KPIs Signal Conso — source : `{source_blob}`",
     )
 
-    logger.info(f"KPIs publiés : {[k['kpi'] for k in kpis]}")
+    logger.info(f"KPIs publiés : {[k.get('kpi', '?') for k in kpis]}")
     return summary
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SOUS-FLOWS SPÉCIALISÉS (1 par KPI)
+# SOUS-FLOWS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @flow(
@@ -415,32 +404,41 @@ def publish_kpi_results_task(kpis: list[dict[str, Any]], source_blob: str) -> di
     description="Flow dédié au KPI : Nombre total de signalements.",
     log_prints=True,
 )
-def flow_nombre_signalements(
-    df: pd.DataFrame,
-) -> dict[str, Any]:
+def flow_nombre_signalements(df: pd.DataFrame) -> dict[str, Any]:
     return kpi_nombre_signalements_task(df)
 
 
 @flow(
-    name="flow-signalements-transmis",
-    description="Flow dédié au KPI : Part des signalements transmis.",
+    name="flow-transmis-global",
+    description="Flow dédié aux KPI : signalements transmis / transmis lus.",
     log_prints=True,
 )
-def flow_signalements_transmis(
+def flow_transmis_global(
     df: pd.DataFrame,
-) -> dict[str, Any]:
-    return kpi_signalements_transmis_task(df)
+    kpi_type: str = "both",
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """
+    kpi_type:
+      - "transmis"      -> calcule seulement le taux transmis
+      - "transmis_lus"  -> calcule seulement le taux transmis lus
+      - "both"          -> calcule les deux KPI
+    """
+    logger = get_run_logger()
 
+    if kpi_type == "transmis":
+        return kpi_signalements_transmis_task(df)
 
-@flow(
-    name="flow-signalements-transmis-lus",
-    description="Flow dédié au KPI : Part des signalements transmis lus.",
-    log_prints=True,
-)
-def flow_signalements_transmis_lus(
-    df: pd.DataFrame,
-) -> dict[str, Any]:
-    return kpi_signalements_transmis_lus_task(df)
+    if kpi_type == "transmis_lus":
+        return kpi_signalements_transmis_lus_task(df)
+
+    if kpi_type == "both":
+        logger.info("Calcul des KPI 'transmis' et 'transmis_lus'.")
+        return [
+            kpi_signalements_transmis_task(df),
+            kpi_signalements_transmis_lus_task(df),
+        ]
+
+    raise ValueError(f"Valeur de kpi_type invalide : {kpi_type!r}")
 
 
 @flow(
@@ -448,21 +446,19 @@ def flow_signalements_transmis_lus(
     description="Flow dédié au KPI : Part des signalements lus ayant une réponse.",
     log_prints=True,
 )
-def flow_signalements_lus_reponse(
-    df: pd.DataFrame,
-) -> dict[str, Any]:
+def flow_signalements_lus_reponse(df: pd.DataFrame) -> dict[str, Any]:
     return kpi_signalements_lus_reponse_task(df)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FLOW PRINCIPAL (PIPELINE COMPLET)
+# FLOW PRINCIPAL
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @flow(
     name="kpi-pipeline-flow",
     description=(
         "Pipeline Prefect complet Signal Conso : "
-        "extraction GCS → filtrage → calcul des 4 KPIs en parallèle → publication."
+        "extraction GCS → filtrage → calcul des 4 KPIs → publication."
     ),
     log_prints=True,
 )
@@ -482,14 +478,13 @@ def kpi_pipeline_flow(
     reference_date   : date de référence (défaut : aujourd'hui)
     period           : "Depuis le début du mois" | "7 derniers jours" | "Toutes les données"
     region           : filtre optionnel sur reg_name
-    department_label : filtre optionnel sur department_label (ex: "75 - Paris")
+    department_label : filtre optionnel sur department_label
     """
     logger = get_run_logger()
     logger.info(
         f"🚀 Démarrage pipeline KPI Signal Conso | bucket={bucket_name} | période={period}"
     )
 
-    # ── 1. Extraction GCS ────────────────────────────────────────────────────
     client = get_gcs_client_task()
     blob_name = find_latest_blob_task(client, bucket_name, prefix)
 
@@ -498,11 +493,8 @@ def kpi_pipeline_flow(
         return {"error": "Aucun fichier GCS trouvé", "kpis": []}
 
     raw_df = download_dataset_task(client, bucket_name, blob_name)
-
-    # ── 2. Pré-traitement ─────────────────────────────────────────────────────
     df = preprocess_task(raw_df)
 
-    # ── 3. Filtrage ───────────────────────────────────────────────────────────
     df = apply_temporal_filter_task(df, reference_date=reference_date, period=period)
     df = apply_geo_filter_task(df, region=region, department_label=department_label)
 
@@ -510,18 +502,18 @@ def kpi_pipeline_flow(
         logger.warning("DataFrame vide après filtrage — KPIs non calculables.")
         return {"error": "Aucune donnée après filtrage", "kpis": [], "source": blob_name}
 
-    # ── 4. Calcul des 4 KPIs (sous-flows en parallèle via submit) ────────────
-    # Note : les sous-flows sont appelés directement ; pour un vrai parallélisme
-    # Prefect, utiliser .submit() via ConcurrentTaskRunner ou DaskTaskRunner.
+    kpis: list[dict[str, Any]] = []
 
-    kpi_total = flow_nombre_signalements(df)
-    kpi_transmis = flow_signalements_transmis(df)
-    kpi_transmis_lus = flow_signalements_transmis_lus(df)
-    kpi_lus_reponse = flow_signalements_lus_reponse(df)
+    kpis.append(flow_nombre_signalements(df))
 
-    kpis = [kpi_total, kpi_transmis, kpi_transmis_lus, kpi_lus_reponse]
+    transmis_results = flow_transmis_global(df, kpi_type="both")
+    if isinstance(transmis_results, list):
+        kpis.extend(transmis_results)
+    else:
+        kpis.append(transmis_results)
 
-    # ── 5. Publication ────────────────────────────────────────────────────────
+    kpis.append(flow_signalements_lus_reponse(df))
+
     summary = publish_kpi_results_task(kpis, source_blob=blob_name)
 
     logger.info("✅ Pipeline terminé avec succès.")
@@ -535,11 +527,10 @@ def kpi_pipeline_flow(
 if __name__ == "__main__":
     result = kpi_pipeline_flow(
         period="Depuis le début du mois",
-        # Décommenter pour filtrer :
         # region="Île-de-France",
         # department_label="75 - Paris",
     )
-    import json
+
     print("\n──────────────────────────────────────────")
     print("📊 Résultats KPI Signal Conso")
     print("──────────────────────────────────────────")
