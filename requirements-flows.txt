@@ -1,0 +1,17 @@
+# ══════════════════════════════════════════════════════════════════════════════
+# requirements-flows.txt — Dépendances UNIQUEMENT pour les flows Prefect
+# ══════════════════════════════════════════════════════════════════════════════
+# Utilisé dans prefect.yaml > pull > pip_install_requirements
+# Ne contient QUE ce dont signal_conso_flows.py a besoin au runtime.
+# Evite les conflits avec fastapi/uvicorn/streamlit qui tournent ailleurs.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Orchestration
+prefect==2.14.21
+
+# Données (utilisé dans les tasks de transformation)
+pandas>=2.0,<3
+numpy>=1.24,<2
+
+# GCS (extraction du dataset)
+google-cloud-storage>=2.10,<3

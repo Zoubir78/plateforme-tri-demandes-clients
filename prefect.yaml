@@ -29,7 +29,8 @@ pull:
   - prefect.deployments.steps.set_working_directory:
       directory: "{{ git_clone.directory }}"
   - prefect.deployments.steps.pip_install_requirements:
-      requirements_file: requirements.txt
+      requirements_file: requirements-flows.txt 
+      stream_output: true
 
 deployments:
   - name: signal-conso-pipeline
