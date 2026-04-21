@@ -51,9 +51,9 @@ deployments:
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "clean_complaints"
-          GCS_PROCESSED_PREFIX: "processed/"
-          GOOGLE_APPLICATION_CREDENTIALS: "./secrets/tri-demandes-clients-da1709669c29.json"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
+          GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
       cron: "0 */4 * * *"
@@ -61,8 +61,8 @@ deployments:
       active: true
 
     parameters:
-      bucket_name: "clean_complaints"
-      prefix: "processed/"
+      bucket_name: "{{ $GCS_BUCKET_NAME }}"
+      prefix: "{{ $GCS_PROCESSED_PREFIX }}"
       period: "Depuis le début du mois"
       region: null
       department_label: null
@@ -85,9 +85,9 @@ deployments:
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "clean_complaints"
-          GCS_PROCESSED_PREFIX: "processed/"
-          GOOGLE_APPLICATION_CREDENTIALS: "./secrets/tri-demandes-clients-da1709669c29.json"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
+          GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
       cron: "0 */4 * * *"
@@ -115,9 +115,9 @@ deployments:
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "clean_complaints"
-          GCS_PROCESSED_PREFIX: "processed/"
-          GOOGLE_APPLICATION_CREDENTIALS: "./secrets/tri-demandes-clients-da1709669c29.json"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
+          GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
       cron: "0 */4 * * *"
@@ -145,9 +145,9 @@ deployments:
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "clean_complaints"
-          GCS_PROCESSED_PREFIX: "processed/"
-          GOOGLE_APPLICATION_CREDENTIALS: "./secrets/tri-demandes-clients-da1709669c29.json"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
+          GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
       cron: "0 */4 * * *"
@@ -174,9 +174,9 @@ deployments:
       work_queue_name: default
       job_variables:
         env:
-          GCS_BUCKET_NAME: "clean_complaints"
-          GCS_PROCESSED_PREFIX: "processed/"
-          GOOGLE_APPLICATION_CREDENTIALS: "./secrets/tri-demandes-clients-da1709669c29.json"
+          GCS_BUCKET_NAME: "{{ $GCS_BUCKET_NAME }}"
+          GCS_PROCESSED_PREFIX: "{{ $GCS_PROCESSED_PREFIX }}"
+          GOOGLE_APPLICATION_CREDENTIALS: "{{ $GOOGLE_APPLICATION_CREDENTIALS }}"
 
     schedule:
       cron: "0 8 * * *"
@@ -184,8 +184,8 @@ deployments:
       active: true
 
     parameters:
-      bucket_name: "clean_complaints"
-      prefix: "processed/"
+      bucket_name: "{{ $GCS_BUCKET_NAME }}"
+      prefix: "{{ $GCS_PROCESSED_PREFIX }}"
       period: "Depuis le début du mois"
       region: null
       department_label: null
