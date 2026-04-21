@@ -1,3 +1,4 @@
+anyio==3.7.1
 fastapi==0.110.0
 uvicorn[standard]==0.34.0
 streamlit==1.28.0
@@ -19,6 +20,6 @@ python-dotenv==1.2.2
 plotly==5.15.0
 prefect==2.14.21
 
-pydantic<2.0.0
+pydantic==1.10.13
+sqlalchemy==1.4.52
 redis==5.0.4
-sqlalchemy<2.0.0
