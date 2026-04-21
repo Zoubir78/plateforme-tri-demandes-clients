@@ -5,13 +5,10 @@ Flows orchestrés :
   1. nombre_signalements       — Comptage total des signalements
   2. signalements_transmis     — Part des signalements transmis aux entreprises
   3. signalements_transmis_lus — Part des signalements transmis qui ont été lus
-  4. signalements_lus_reponse   — Part des signalements lus ayant reçu une réponse
+  4. signalements_lus_reponse  — Part des signalements lus ayant reçu une réponse
 
 Usage :
-  # Lancement ponctuel
   python signal_conso_flows.py
-
-  # Déploiement avec schedule
   prefect deploy --all
 """
 
@@ -25,8 +22,6 @@ from typing import Any
 
 import pandas as pd
 from google.cloud import storage
-
-# -- Prefect 3.x ---------------------------------------------------------------
 from prefect import flow, get_run_logger, task
 from prefect.artifacts import create_table_artifact
 
@@ -67,7 +62,6 @@ def _bool_series(series: pd.Series) -> pd.Series:
 
 
 def _now_iso() -> str:
-    """Heure UTC courante en ISO 8601 (datetime.utcnow() deprecie en Python 3.12)."""
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -91,55 +85,61 @@ def get_gcs_client_task() -> storage.Client:
 
 @task(
     name="find-latest-blob",
-    description="Trouve le blob le plus recent dans le prefix GCS.",
+    description="Trouve le blob le plus récent dans le prefix GCS.",
     retries=3,
     retry_delay_seconds=10,
     tags=["gcs", "extract"],
+    persist_result=False,
 )
 def find_latest_blob_task(
-    client: storage.Client, bucket_name: str, prefix: str
+    client: storage.Client,
+    bucket_name: str,
+    prefix: str,
 ) -> str | None:
     logger = get_run_logger()
-    logger.info(f"Recherche du blob le plus recent dans gs://{bucket_name}/{prefix}")
+    logger.info(f"Recherche du blob le plus récent dans gs://{bucket_name}/{prefix}")
 
     bucket = client.bucket(bucket_name)
     blobs = list(bucket.list_blobs(prefix=prefix))
 
     if not blobs:
-        logger.warning(f"Aucun blob trouve dans gs://{bucket_name}/{prefix}")
+        logger.warning(f"Aucun blob trouvé dans gs://{bucket_name}/{prefix}")
         return None
 
     fallback_dt = datetime.min.replace(tzinfo=timezone.utc)
     latest = max(blobs, key=lambda b: b.updated or fallback_dt)
-    logger.info(f"Blob le plus recent : {latest.name} (mis a jour le {latest.updated})")
+
+    logger.info(f"Blob le plus récent : {latest.name} (mis à jour le {latest.updated})")
     return latest.name
 
 
 @task(
     name="download-dataset",
-    description="Telecharge le dataset CSV depuis GCS et le charge en DataFrame.",
+    description="Télécharge le dataset CSV depuis GCS et le charge en DataFrame.",
     retries=3,
     retry_delay_seconds=15,
     tags=["gcs", "extract"],
     persist_result=False,
 )
 def download_dataset_task(
-    client: storage.Client, bucket_name: str, blob_name: str
+    client: storage.Client,
+    bucket_name: str,
+    blob_name: str,
 ) -> pd.DataFrame:
     logger = get_run_logger()
-    logger.info(f"Telechargement de gs://{bucket_name}/{blob_name}")
+    logger.info(f"Téléchargement de gs://{bucket_name}/{blob_name}")
 
     blob = client.bucket(bucket_name).blob(blob_name)
     data = blob.download_as_bytes()
     df = pd.read_csv(BytesIO(data))
 
-    logger.info(f"Dataset charge : {len(df)} lignes x {len(df.columns)} colonnes")
+    logger.info(f"Dataset chargé : {len(df)} lignes x {len(df.columns)} colonnes")
     return df
 
 
 @task(
     name="preprocess-dataframe",
-    description="Normalise les types (dates, booleens) du DataFrame brut.",
+    description="Normalise les types (dates, booléens) du DataFrame brut.",
     tags=["transform"],
     persist_result=False,
 )
@@ -154,7 +154,7 @@ def preprocess_task(df: pd.DataFrame) -> pd.DataFrame:
         if bool_col in df.columns:
             df[bool_col] = _bool_series(df[bool_col])
 
-    logger.info("Pre-traitement termine.")
+    logger.info("Pré-traitement terminé.")
     return df
 
 
@@ -162,7 +162,81 @@ def preprocess_task(df: pd.DataFrame) -> pd.DataFrame:
 # TASKS FILTRAGE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@task(name="kpi-nombre-signalements", tags=["kpi"])
+@task(
+    name="apply-temporal-filter",
+    description="Filtre le DataFrame sur une période temporelle.",
+    tags=["filter"],
+    persist_result=False,
+)
+def apply_temporal_filter_task(
+    df: pd.DataFrame,
+    reference_date: date | None = None,
+    period: str = "Depuis le début du mois",
+) -> pd.DataFrame:
+    logger = get_run_logger()
+
+    if "creationdate" not in df.columns:
+        logger.warning("Colonne 'creationdate' absente — pas de filtre temporel.")
+        return df
+
+    ref = reference_date or date.today()
+    df = df[df["creationdate"].notna()].copy()
+
+    if period == "Depuis le début du mois":
+        start = ref.replace(day=1)
+        end = ref
+    elif period == "7 derniers jours":
+        start = ref - timedelta(days=6)
+        end = ref
+    elif period == "Toutes les données":
+        logger.info("Période = 'Toutes les données' — pas de filtre temporel.")
+        return df
+    else:
+        logger.warning(f"Période inconnue '{period}' — pas de filtre temporel.")
+        return df
+
+    filtered = df[
+        (df["creationdate"].dt.date >= start)
+        & (df["creationdate"].dt.date <= end)
+    ]
+
+    logger.info(
+        f"Filtre temporel [{start} → {end}] : {len(df)} → {len(filtered)} lignes."
+    )
+    return filtered
+
+
+@task(
+    name="apply-geo-filter",
+    description="Filtre le DataFrame par région et/ou département.",
+    tags=["filter"],
+    persist_result=False,
+)
+def apply_geo_filter_task(
+    df: pd.DataFrame,
+    region: str | None = None,
+    department_label: str | None = None,
+) -> pd.DataFrame:
+    logger = get_run_logger()
+
+    if region and "reg_name" in df.columns:
+        before = len(df)
+        df = df[df["reg_name"].astype(str) == region]
+        logger.info(f"Filtre région '{region}' : {before} → {len(df)} lignes.")
+
+    if department_label and "department_label" in df.columns:
+        before = len(df)
+        df = df[df["department_label"].astype(str) == department_label]
+        logger.info(f"Filtre département '{department_label}' : {before} → {len(df)} lignes.")
+
+    return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TASKS KPI
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@task(name="kpi-nombre-signalements", tags=["kpi"], persist_result=False)
 def kpi_nombre_signalements_task(df: pd.DataFrame) -> dict[str, Any]:
     logger = get_run_logger()
     total = len(df)
@@ -176,7 +250,7 @@ def kpi_nombre_signalements_task(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-@task(name="kpi-signalements-transmis", tags=["kpi"])
+@task(name="kpi-signalements-transmis", tags=["kpi"], persist_result=False)
 def kpi_signalements_transmis_task(df: pd.DataFrame) -> dict[str, Any]:
     logger = get_run_logger()
     total = len(df)
@@ -207,7 +281,7 @@ def kpi_signalements_transmis_task(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-@task(name="kpi-signalements-transmis-lus", tags=["kpi"])
+@task(name="kpi-signalements-transmis-lus", tags=["kpi"], persist_result=False)
 def kpi_signalements_transmis_lus_task(df: pd.DataFrame) -> dict[str, Any]:
     logger = get_run_logger()
     missing = [c for c in ["signalement_transmis", "signalement_lu"] if c not in df.columns]
@@ -225,6 +299,7 @@ def kpi_signalements_transmis_lus_task(df: pd.DataFrame) -> dict[str, Any]:
     transmitted = int(df["signalement_transmis"].sum())
     read = int(df[df["signalement_transmis"]]["signalement_lu"].sum())
     rate = read / transmitted if transmitted else 0.0
+
     logger.info(f"[KPI] Signalements transmis lus = {read}/{transmitted} = {rate:.2%}")
     return {
         "kpi": "signalements_transmis_lus",
@@ -237,7 +312,7 @@ def kpi_signalements_transmis_lus_task(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-@task(name="kpi-signalements-lus-reponse", tags=["kpi"])
+@task(name="kpi-signalements-lus-reponse", tags=["kpi"], persist_result=False)
 def kpi_signalements_lus_reponse_task(df: pd.DataFrame) -> dict[str, Any]:
     logger = get_run_logger()
     missing = [c for c in ["signalement_lu", "signalement_reponse"] if c not in df.columns]
@@ -255,6 +330,7 @@ def kpi_signalements_lus_reponse_task(df: pd.DataFrame) -> dict[str, Any]:
     read = int(df["signalement_lu"].sum())
     response = int(df[df["signalement_lu"]]["signalement_reponse"].sum())
     rate = response / read if read else 0.0
+
     logger.info(f"[KPI] Signalements lus avec reponse = {response}/{read} = {rate:.2%}")
     return {
         "kpi": "signalements_lus_reponse",
@@ -267,13 +343,14 @@ def kpi_signalements_lus_reponse_task(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 # TASK PUBLICATION
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 
-@task(name="publish-kpi-results", tags=["publish"])
+@task(name="publish-kpi-results", tags=["publish"], persist_result=False)
 def publish_kpi_results_task(
-    kpis: list[dict[str, Any]], source_blob: str
+    kpis: list[dict[str, Any]],
+    source_blob: str,
 ) -> dict[str, Any]:
     logger = get_run_logger()
 
@@ -288,16 +365,16 @@ def publish_kpi_results_task(
             row["Valeur"] = k.get("error", "N/A")
 
         if "numerator" in k and "denominator" in k:
-            row["Detail"] = f"{k['numerator']} / {k['denominator']}"
+            row["Détail"] = f"{k['numerator']} / {k['denominator']}"
         else:
-            row["Detail"] = "-"
+            row["Détail"] = "-"
 
         table_rows.append(row)
 
     create_table_artifact(
         key="signal-conso-kpis",
         table=table_rows,
-        description=f"KPIs Signal Conso -- source : {source_blob}",
+        description=f"KPIs Signal Conso — source : {source_blob}",
     )
 
     summary = {
@@ -305,17 +382,20 @@ def publish_kpi_results_task(
         "computed_at": _now_iso(),
         "kpis": kpis,
     }
-    logger.info(f"KPIs publies : {[k['kpi'] for k in kpis]}")
+    logger.info(f"KPIs publiés : {[k.get('kpi', '?') for k in kpis]}")
     return summary
 
 
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 # FLOW PRINCIPAL
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 
 @flow(
     name="kpi-pipeline-flow",
-    description="Pipeline Prefect 3.x Signal Conso : GCS -> filtrage -> 4 KPIs -> artifact.",
+    description=(
+        "Pipeline Prefect complet Signal Conso : "
+        "extraction GCS → filtrage → calcul des 4 KPIs → publication."
+    ),
     log_prints=True,
 )
 def kpi_pipeline_flow(
@@ -327,54 +407,57 @@ def kpi_pipeline_flow(
     department_label: str | None = None,
 ) -> dict[str, Any]:
     logger = get_run_logger()
-    logger.info(f"Demarrage pipeline KPI | bucket={bucket_name} | periode={period}")
+    logger.info(
+        f"🚀 Démarrage pipeline KPI Signal Conso | bucket={bucket_name} | période={period}"
+    )
 
-    # 1. Extraction GCS
-    client   = get_gcs_client_task()
+    client = get_gcs_client_task()
     blob_name = find_latest_blob_task(client, bucket_name, prefix)
 
     if blob_name is None:
-        logger.error("Aucun fichier trouve dans GCS -- arret.")
-        return {"error": "Aucun fichier GCS trouve", "kpis": []}
+        logger.error("Aucun fichier trouvé dans GCS — arrêt du pipeline.")
+        return {"error": "Aucun fichier GCS trouvé", "kpis": []}
 
     raw_df = download_dataset_task(client, bucket_name, blob_name)
-
-    # 2. Pre-traitement
     df = preprocess_task(raw_df)
 
-    # 3. Filtrage
     df = apply_temporal_filter_task(df, reference_date=reference_date, period=period)
     df = apply_geo_filter_task(df, region=region, department_label=department_label)
 
     if df.empty:
-        logger.warning("DataFrame vide apres filtrage.")
-        return {"error": "Aucune donnee apres filtrage", "kpis": [], "source": blob_name}
+        logger.warning("DataFrame vide après filtrage — KPIs non calculables.")
+        return {"error": "Aucune donnée après filtrage", "kpis": [], "source": blob_name}
 
-    # 4. KPIs (tasks dans le meme flow -- pas de sous-flows)
-    kpi_total     = kpi_nombre_signalements_task(df)
-    kpi_transmis  = kpi_signalements_transmis_task(df)
-    kpi_trans_lus = kpi_signalements_transmis_lus_task(df)
-    kpi_lus_rep   = kpi_signalements_lus_reponse_task(df)
+    kpis: list[dict[str, Any]] = []
 
-    # 5. Publication
-    summary = publish_kpi_results_task(
-        [kpi_total, kpi_transmis, kpi_trans_lus, kpi_lus_rep],
-        source_blob=blob_name,
-    )
+    kpis.append(kpi_nombre_signalements_task(df))
 
-    logger.info("Pipeline termine avec succes.")
+    transmis_results = kpi_signalements_transmis_task(df)
+    if isinstance(transmis_results, list):
+        kpis.extend(transmis_results)
+    else:
+        kpis.append(transmis_results)
+
+    kpis.append(kpi_signalements_lus_reponse_task(df))
+
+    summary = publish_kpi_results_task(kpis, source_blob=blob_name)
+
+    logger.info("✅ Pipeline terminé avec succès.")
     return summary
 
 
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 # ENTRYPOINT LOCAL
-# ==============================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    import json
+    result = kpi_pipeline_flow(
+        period="Depuis le début du mois",
+        # region="Île-de-France",
+        # department_label="75 - Paris",
+    )
 
-    result = kpi_pipeline_flow(period="Depuis le début du mois")
-    print("\n" + "-" * 50)
-    print("KPIs Signal Conso")
-    print("-" * 50)
-    print(json.dumps(result, indent=2, ensure_ascii=False, default=str))
+    print("\n──────────────────────────────────────────")
+    print("📊 Résultats KPI Signal Conso")
+    print("──────────────────────────────────────────")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
